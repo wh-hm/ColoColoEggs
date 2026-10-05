@@ -159,29 +159,17 @@
 </div>
 
 <script>
-  // ペットのステータス管理
+  // APIのURL（ローカル実行時のアドレス）
+  const API_BASE_URL = 'http://127.0.0.1:8000';
+
   let pet = {
-    stage: 0, // 0: たまご, 1: こども, 2: おとな
+    stage: 0,
     hunger: 50,
     energy: 50,
     affection: 50,
     turns: 0,
     isAlive: true
   };
-
-  // localStorageからのロード
-  function loadGame() {
-    const saved = localStorage.getItem('web_pet_save');
-    if (saved) {
-      pet = JSON.parse(saved);
-    }
-    updateUI();
-  }
-
-  // localStorageへの保存
-  function saveGame() {
-    localStorage.setItem('web_pet_save', JSON.stringify(pet));
-  }
 
   function getAvatar() {
     if (!pet.isAlive) return '💀';
@@ -196,7 +184,6 @@
   function updateUI() {
     document.getElementById('pet-avatar').innerText = getAvatar();
     
-    // ステータス反映
     document.getElementById('val-hunger').innerText = pet.hunger + '%';
     document.getElementById('bar-hunger').style.width = pet.hunger + '%';
 
@@ -206,91 +193,64 @@
     document.getElementById('val-affection').innerText = pet.affection + '%';
     document.getElementById('bar-affection').style.width = pet.affection + '%';
 
-    saveGame();
+    localStorage.setItem('web_pet_save', JSON.stringify(pet));
   }
 
   function setMessage(msg) {
     document.getElementById('message').innerText = msg;
     const avatar = document.getElementById('pet-avatar');
     avatar.classList.remove('bounce');
-    void avatar.offsetWidth; // trigger reflow
+    void avatar.offsetWidth;
     avatar.classList.add('bounce');
   }
 
-  function feedPet() {
-    if (!pet.isAlive) return;
-    pet.hunger = Math.min(100, pet.hunger + 30);
-    pet.energy = Math.min(100, pet.energy + 5);
-    setMessage('ごはんを食べてお腹がいっぱい！');
-    passTime(false);
+  // --- FastAPI呼び出し用の共通関数 ---
+  async function sendAction(endpoint) {
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pet)
+      });
+      const data = await response.json();
+      
+      // FastAPIから受け取った最新のステータスで更新
+      pet = data;
+      setMessage(pet.message);
+      updateUI();
+    } catch (error) {
+      console.error('API通信エラー:', error);
+      setMessage('サーバーとの通信に失敗しました');
+    }
   }
 
-  function playPet() {
-    if (!pet.isAlive) return;
-    if (pet.energy < 20) {
-      setMessage('疲れていて遊べそうにありません…');
-      return;
+  function feedPet() { sendAction('/api/pet/feed'); }
+  function playPet() { sendAction('/api/pet/play'); }
+  function sleepPet() { sendAction('/api/pet/sleep'); }
+  function passTime() { sendAction('/api/pet/pass_time'); }
+
+  async function resetPet() {
+    if (confirm('最初からやり直しますか？')) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/pet/init`);
+        pet = await response.json();
+        setMessage('たまごを温めて育てよう！');
+        updateUI();
+      } catch (e) {
+        console.error(e);
+      }
     }
-    pet.affection = Math.min(100, pet.affection + 15);
-    pet.hunger = Math.max(0, pet.hunger - 15);
-    pet.energy = Math.max(0, pet.energy - 20);
-    setMessage('元気に遊んで満足そうです！');
-    passTime(false);
   }
 
-  function sleepPet() {
-    if (!pet.isAlive) return;
-    pet.energy = Math.min(100, pet.energy + 40);
-    pet.hunger = Math.max(0, pet.hunger - 10);
-    setMessage('ぐっすり眠って体力が回復しました！');
-    passTime(false);
-  }
-
-  function passTime(manual = true) {
-    if (!pet.isAlive) return;
-    
-    pet.turns++;
-    pet.hunger = Math.max(0, pet.hunger - 10);
-
-    // 進化ロジック
-    if (pet.stage === 0 && pet.turns >= 2) {
-      pet.stage = 1;
-      setMessage('たまごから赤ちゃんが生まれました！');
-    } else if (pet.stage === 1 && pet.turns >= 8) {
-      pet.stage = 2;
-      setMessage('ペットが大人の姿に進化しました！');
-    } else if (manual) {
-      setMessage('時間を過ごしました。');
+  // ロード処理
+  function loadGame() {
+    const saved = localStorage.getItem('web_pet_save');
+    if (saved) {
+      pet = JSON.parse(saved);
     }
-
-    // 死亡判定
-    if (pet.hunger <= 0) {
-      pet.energy = Math.max(0, pet.energy - 20);
-    }
-    if (pet.energy <= 0) {
-      pet.isAlive = false;
-      setMessage('力尽きてしまいました…');
-    }
-
     updateUI();
   }
 
-  function resetPet() {
-    if (confirm('最初からやり直しますか？')) {
-      pet = {
-        stage: 0,
-        hunger: 50,
-        energy: 50,
-        affection: 50,
-        turns: 0,
-        isAlive: true
-      };
-      setMessage('たまごを温めて育てよう！');
-      updateUI();
-    }
-  }
-
-  // 初期化
   loadGame();
 </script>
 
